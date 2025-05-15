@@ -1,0 +1,480 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model with authentication and profile
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          UserRole  @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  isVerified    Boolean  @default(false)
+
+  // Relationships
+  listings      Listing[]
+  bids         Bid[]
+  watchlist    WatchlistItem[]
+  feedback     Feedback[]
+  collections  Collection[]
+  accounts     Account[]
+  sessions     Session[]
+  verificationRequests VerificationRequest[]
+  scannedCards    ScannedCard[]
+  verifiedScans   ScannedCard[] @relation("VerifiedScans")
+  notifications   Notification[]
+  offersMade     TradeOffer[] @relation("OffersMade")
+  offersReceived TradeOffer[] @relation("OffersReceived")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Card listing with auction details
+model Listing {
+  id              String        @id @default(cuid())
+  title           String
+  description     String
+  condition       String
+  grade           String?
+  grader          String?
+  popReport       Int?
+  startingPrice   Float
+  reservePrice    Float?
+  buyNowPrice     Float
+  currentPrice    Float
+  auctionType     AuctionType
+  status          ListingStatus @default(DRAFT)
+  startTime       DateTime
+  endTime         DateTime
+  images          String[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  sellerId        String
+  categoryId      String
+
+  // Relationships
+  seller          User          @relation(fields: [sellerId], references: [id])
+  category        Category      @relation(fields: [categoryId], references: [id])
+  bids            Bid[]
+  watchlistItems  WatchlistItem[]
+  scannedCard     ScannedCard?
+  notifications   Notification[]
+}
+
+// Bidding history
+model Bid {
+  id        String   @id @default(cuid())
+  amount    Float
+  createdAt DateTime @default(now())
+  userId    String
+  listingId String
+
+  // Relationships
+  user      User     @relation(fields: [userId], references: [id])
+  listing   Listing  @relation(fields: [listingId], references: [id])
+}
+
+// Watchlist functionality
+model WatchlistItem {
+  id        String   @id @default(cuid())
+  userId    String
+  listingId String
+  createdAt DateTime @default(now())
+
+  // Relationships
+  user      User     @relation(fields: [userId], references: [id])
+  listing   Listing  @relation(fields: [listingId], references: [id])
+
+  @@unique([userId, listingId])
+}
+
+// Categories for organizing listings
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  parentId    String?
+  
+  // Relationships
+  parent      Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  listings    Listing[]
+}
+
+// User's personal collection
+model Collection {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isPublic    Boolean  @default(false)
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  user        User     @relation(fields: [userId], references: [id])
+  cards       CollectionCard[]
+}
+
+// Cards in a collection
+model CollectionCard {
+  id           String     @id @default(cuid())
+  collectionId String
+  cardName     String
+  grade        String?
+  grader       String?
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  // Relationships
+  collection   Collection @relation(fields: [collectionId], references: [id])
+  showcaseLinks ShowcaseCard[]
+  tradeOfferItems TradeOfferItem[]
+}
+
+// Feedback system
+model Feedback {
+  id           String   @id @default(cuid())
+  rating       Int
+  comment      String?
+  fromUserId   String
+  toUserId     String
+  createdAt    DateTime @default(now())
+
+  // Relationships
+  fromUser     User     @relation(fields: [fromUserId], references: [id])
+}
+
+// Enums
+enum UserRole {
+  USER
+  SELLER
+  ADMIN
+  MODERATOR
+}
+
+enum AuctionType {
+  ENGLISH
+  TIMED
+  SEALED
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  ENDED
+  SOLD
+  CANCELLED
+}
+
+enum NotificationType {
+  LOW_STOCK
+  NEW_ORDER
+  ORDER_STATUS
+  VERIFICATION_REQUEST
+  VERIFICATION_APPROVED
+  VERIFICATION_REJECTED
+  NEW_BID
+  AUCTION_ENDING
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  USER_BANNED
+  USER_UNBANNED
+  SYSTEM_ALERT
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  user        User?            @relation(fields: [userId], references: [id])
+  userId      String?
+  type        NotificationType
+  message     String
+  read        Boolean          @default(false)
+  stockItem   StockItem?       @relation(fields: [stockItemId], references: [id])
+  stockItemId String?
+  order       Order?           @relation(fields: [orderId], references: [id])
+  orderId     String?
+  listing     Listing?         @relation(fields: [listingId], references: [id])
+  listingId   String?
+  metadata    Json?            // For additional data like bid amount, verification details, etc.
+  createdAt   DateTime         @default(now())
+}
+
+// Card scanning and recognition
+model ScannedCard {
+  id              String    @id @default(cuid())
+  name            String
+  set             String
+  number          String
+  condition       String
+  estimatedValue  Float
+  scanImage       String    // URL to stored scan image
+  confidenceScore Float     // ML model confidence score
+  scanDate        DateTime  @default(now())
+  userId          String
+  verified        Boolean   @default(false)
+  verifiedBy      String?   // Admin ID who verified the scan
+  verifiedAt      DateTime?
+  notes           String?
+
+  // Relationships
+  user            User      @relation(fields: [userId], references: [id])
+  verifiedByUser  User?     @relation("VerifiedScans", fields: [verifiedBy], references: [id])
+  listing         Listing?  @relation(fields: [listingId], references: [id])
+  listingId       String?   @unique
+  assessment      CardConditionAssessment?
+
+  @@index([userId])
+  @@index([verifiedBy])
+}
+
+// Card condition assessment
+model CardConditionAssessment {
+  id              String    @id @default(cuid())
+  scannedCardId   String    @unique
+  edgeWear        Float     // 0-1 score
+  surfaceScratches Float    // 0-1 score
+  cornerDamage    Float     // 0-1 score
+  centering       Float     // 0-1 score
+  printQuality    Float     // 0-1 score
+  overallScore    Float     // Calculated overall condition score
+  assessmentDate  DateTime  @default(now())
+  notes           String?
+
+  // Relationships
+  scannedCard     ScannedCard @relation(fields: [scannedCardId], references: [id])
+
+  @@index([scannedCardId])
+}
+
+// Card market data
+model CardMarketData {
+  id              String    @id @default(cuid())
+  cardName        String
+  setName         String
+  cardNumber      String
+  lastUpdated     DateTime  @default(now())
+  marketPrice     Float
+  trend           Float     // Price trend percentage
+  recentSales     Int       // Number of recent sales
+  averagePrice    Float     // Average sale price
+  lowestPrice     Float
+  highestPrice    Float
+
+  @@unique([cardName, setName, cardNumber])
+  @@index([cardName, setName])
+}
+
+// Add new enum for card conditions
+enum CardCondition {
+  MINT
+  NEAR_MINT
+  EXCELLENT
+  VERY_GOOD
+  GOOD
+  LIGHT_PLAYED
+  PLAYED
+  HEAVILY_PLAYED
+  DAMAGED
+}
+
+// Add new enum for scan verification status
+enum ScanVerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+  FLAGGED
+}
+
+model VerificationRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model StockItem {
+  id          String   @id @default(cuid())
+  name        String
+  quantity    Int
+  price       Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  notifications Notification[]
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  userId      String
+  status      String
+  total       Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  notifications Notification[]
+}
+
+// AI-Powered Card Condition Prediction Results
+model CardPrediction {
+  id                   String   @id @default(cuid())
+  scannedCardId        String   @unique // Link prediction to a specific scan
+  predictedGrade       Float?
+  predictionConfidence Float?
+  predictionDetails    Json?    // Store detailed AI output (e.g., scores per aspect)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  scannedCard ScannedCard @relation(fields: [scannedCardId], references: [id])
+}
+
+// Curated Expert Learning Paths
+model LearningPath {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique // For friendly URLs
+  description String?
+  expertName  String?   // Name of the expert/curator (can link to User later)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relationships
+  steps LearningStep[]
+  // Potentially add a link to a User model if experts have profiles
+  // expertUser   User? @relation(fields: [expertUserId], references: [id])
+  // expertUserId String?
+}
+
+// Steps within a Learning Path
+model LearningStep {
+  id            String   @id @default(cuid())
+  title         String
+  content       String   @db.Text // Use Text for potentially long content (markdown, HTML, etc.)
+  stepOrder     Int      @default(0) // Order of the step in the path
+  learningPathId String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relationships
+  learningPath LearningPath @relation(fields: [learningPathId], references: [id], onDelete: Cascade)
+
+  @@unique([learningPathId, stepOrder]) // Ensure unique order within a path
+}
+
+// User Collection Showcases
+model Showcase {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  userId      String   // Creator of the showcase
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relationships
+  user  User  @relation(fields: [userId], references: [id])
+  cards ShowcaseCard[] // Cards included in this showcase
+}
+
+// Linking model for Cards within a Showcase
+model ShowcaseCard {
+  id           String   @id @default(cuid())
+  showcaseId   String
+  collectionCardId String // Link to a card ALREADY in a user's collection
+  storyText    String?  @db.Text // Custom story/note for this card in this showcase
+  displayOrder Int      @default(0) // Order of the card in the showcase
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relationships
+  showcase       Showcase       @relation(fields: [showcaseId], references: [id], onDelete: Cascade)
+  collectionCard CollectionCard @relation(fields: [collectionCardId], references: [id], onDelete: Cascade)
+
+  @@unique([showcaseId, collectionCardId]) // Ensure a card from a collection is only once per showcase
+  @@index([showcaseId])
+  @@index([collectionCardId])
+}
+
+// Trade Negotiation Hub Models
+model TradeOffer {
+  id          String       @id @default(cuid())
+  status      TradeStatus @default(PENDING) // Enum for offer status
+  offererId   String       // User initiating the offer
+  receiverId  String       // User receiving the offer
+  message     String?      @db.Text // Optional message with the offer
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relationships
+  offerer User @relation("OffersMade", fields: [offererId], references: [id])
+  receiver User @relation("OffersReceived", fields: [receiverId], references: [id])
+  items TradeOfferItem[] // Items included in this trade offer
+
+  @@index([offererId])
+  @@index([receiverId])
+}
+
+model TradeOfferItem {
+  id               String   @id @default(cuid())
+  tradeOfferId     String
+  collectionCardId String   // The specific card from a user's collection
+  isOfferedItem    Boolean  // true if this is an item the offerer is giving, false if it's an item they are requesting
+  createdAt        DateTime @default(now())
+
+  // Relationships
+  tradeOffer     TradeOffer     @relation(fields: [tradeOfferId], references: [id], onDelete: Cascade)
+  collectionCard CollectionCard @relation(fields: [collectionCardId], references: [id]) // Link to the specific card in a user's collection
+
+  @@index([tradeOfferId])
+  @@index([collectionCardId])
+}
+
+// Enum for Trade Offer Status
+enum TradeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+} 
